@@ -1,7 +1,7 @@
 # List of Materials
 
 |#|Item|quantity|
-||||
+|---|---|---|
 |1|MPU6050 Accelerometer & Gyroscope Breakout|1|
 |2|ESP8266 WiFi Module|1|
 |3|TP4056 Lithium Baterry Charging Module|1|

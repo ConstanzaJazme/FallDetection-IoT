@@ -5,4 +5,4 @@
 3. Now, connect Arduino to the protoboard and the components as the picture shows [*]
 4. Run burn bootloader (Tools -> Burn bootloader)
 
-[*]![](/home/constanzajazme/Proyectos/FallDetection-IoT/public/images/circuit plan/Bootloader-ATmega328p_bb.svg) 
+[*]![](/public/images/circuit%20plan/Bootloader-ATmega328p_bb.svg)
