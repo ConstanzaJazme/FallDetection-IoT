@@ -1,6 +1,43 @@
-// MPU-6050 Short Example Sketch
-// Public Domain
+
+// ================================================================
+// ===                       LIBRARIES                          ===
+// ================================================================
 #include<Wire.h>
+
+
+// ================================================================
+// ===                       DEFINES                            ===
+// ================================================================
+
+#define ACC_OFFSET_X -1449;
+#define ACC_OFFSET_Y 558;
+#define ACC_OFFSET_Z 866;
+
+#define GYRO_OFFSET_X 29;
+#define GYRO_OFFSET_Y -23;
+#define GYRO_OFFSET_Z 35;
+
+// ================================================================
+// ===                       STRUCTS                            ===
+// ================================================================
+
+typedef struct {
+  float roll;
+  float pitch;
+
+} IMU_rotation;
+
+typedef struct {
+  float x;
+  float y;
+  float z;
+
+} IMU_accel;
+
+// ================================================================
+// ===                       STRUCTS                            ===
+// ================================================================
+
 const int MPU_addr=0x68;  // I2C address of the MPU-6050
 int16_t AcX,AcY,AcZ,Tmp,GyX,GyY,GyZ;
 float ax=0, ay=0, az=0, gx=0, gy=0, gz=0;
