@@ -14,7 +14,7 @@
 //Conversion factor (w_ACCorGYRO=actual_reading*(maximum_absolute_ACCorGYRO/maximum_absolute_values_MPU6050)) = actual_reading*(1/(maximum_absolute_values_MPU6050/maximum_absolute_ACCorGYRO)))
 #define ACC_RATIOS 16384.0      //Obtained from (maximum_absolute_values_MPU6050 / maximum_absolute_ACC) = (32768/2)
 #define GYRO_RATIOS 131.0
-#define RAD_TO_DEG = 57.295779
+#define RAD_TO_DEG = 57.295779  //57.295779 = 1 / (3.142 / 180) ¡The Arduino asin function is in radians!
 
 //This offsets​were obtained from the execution of the example "MPU6050_Calibration" on the "MPU6050" library.
 const int ACC_OFFSET_X = -1449;
@@ -34,14 +34,12 @@ const int MPU_addr=0x68;  // I2C address of the MPU-6050
 typedef struct {
   float roll;
   float pitch;
-
 } IMU_rotation;
 
 typedef struct {
   float x;
   float y;
   float z;
-
 } IMU_accel;
 
 // ================================================================
@@ -70,11 +68,15 @@ MPU6050 sensor(MPU_addr);
 // RAW data from accelerometer and giroscope (x, y and z axis)
 int16_t AcX, AcY, AcZ, Tmp , GyX, GyY, GyZ;
 float ax=0, ay=0, az=0, gx=0, gy=0, gz=0;
+
 //Orientation angles
-float Acc[2];
-float Gy[3];
-float Angle[3];
- 
+float Raw_AM, Aangle_roll, Aangle_pitch; 
+float Raw_GM;
+
+// ================================================================
+// ===                           SETUP                          ===
+// ================================================================
+
 void setup() {
     Wire.begin();           //Starting I2C  
     Serial.begin(9600);
@@ -98,18 +100,22 @@ void setup() {
     // Start with the readings
     Signal = readingMPU6050;
 }
+
+// ================================================================
+// ===                            LOOP                          ===
+// ================================================================
  
 void loop() {
     switch (Signal)
     {
         case readingMPU6050:
             mpu_read();     //Read Data collected by MPU6050
-            proccesAccelData();     //Process data with the respective ratios values
-            proccesGyroData();
+            proccesAccelMagnitudes();     //Process data with the respective ratios values
+            proccesGyroMagnitudes();
 
-            float Raw_AM = pow(pow(ax,2)+pow(ay,2)+pow(az,2),0.5);
             int AM = Raw_AM * 10;  // as values are within 0 to 1, I multiplied 
                          // it by for using if else conditions 
+
             
             //Mostrar las lecturas separadas por un [tab]
             Serial.print("a[x y z](m/s2) g[x y z](deg/s):\t");
@@ -122,6 +128,23 @@ void loop() {
             
             delay(100);
             break;
+
+        case setTriggers:
+            break;
+    
+        case resetTriggers:
+            break;
+        case checkSignal:
+            break;
+        
+        case breaksLowerTreshold:
+            break;
+
+        case breaksUpperTreshold:
+            break;
+
+        case checkOrientation:
+            break;        
         
         case FallDetected:
         {
@@ -131,6 +154,10 @@ void loop() {
         }
     }
 }
+
+// ================================================================
+// ===                        FUNCTIONS                         ===
+// ================================================================
 
 void mpu_read() {
     Wire.beginTransmission(MPU_addr);
@@ -153,16 +180,27 @@ void mpu_read() {
     //   sensor.getRotation(&gx, &gy, &gz);
 }
 
-void proccesAccelData(){
+void proccesAccelMagnitudes(){
     ax = AcX * (1/ACC_RATIOS);       //Get Acceleration on [m/s2] replacing 1 by CONSTANT_G
     ay = AcY * (1/ACC_RATIOS);
     az = AcZ * (1/ACC_RATIOS);
     // netForce = (gForceX+gForceY+gForceZ)/3;
 }
 
-void processGyroData() {
+
+void proccesGyroMagnitudes() {
     gx = GyX / GYRO_RATIOS;
     gy = GyY / GYRO_RATIOS;
     gz = GyZ / GYRO_RATIOS;
     // netRot = sqrt((rotX*rotX)+(rotY*rotY)+(rotZ*rotZ));
+}
+
+void proccesAccelAngles(){
+    Raw_AM = sqrt(pow(ax,2)+pow(ay,2)+pow(az,2));     //Calculate the total Accelerometer Vector or Acceleration Magnitude
+    Aangle_pitch = atan(-1 * az / sqrt(pow(ax, 2) + pow(ay, 2))) * RAD_TO_DEG;      //Calculate the pitch angle
+    Aangle_roll= atan(-1 * ay / sqrt(pow(ax, 2) + pow(az, 2))) * RAD_TO_DEG;       //Calculate the roll angle
+}
+
+void proccesGyroAngles(){
+    Raw_GM = sqrt(pow(gx,2)+pow(gy,2)+pow(gz,2));     //Calculate the total Gyroscope Vector or Rotation Magnitude
 }
