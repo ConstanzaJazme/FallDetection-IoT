@@ -38,9 +38,14 @@ The default ranges (2g and 250 ° / s)
 ## 4. Circuit
 
 MPU6050 - Arduino UNO R3
+
 VCC  ->  5V
+
 GND  ->  GND
+
 SDA  ->  A4
+
 SCL  ->  A5
+
 INT -> port-2
 
