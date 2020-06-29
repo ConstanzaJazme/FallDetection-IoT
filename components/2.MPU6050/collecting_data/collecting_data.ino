@@ -103,14 +103,13 @@ void loop() {
     switch (Signal)
     {
         case readingMPU6050:
-            mpu_read();
-            // Leer las aceleraciones y velocidades angulares
-            float ax_m_s2 = AcX * (CONSTANT_G/ACC_RATIOS);
-            float ay_m_s2 = AcY * (CONSTANT_G/ACC_RATIOS);
-            float az_m_s2 = AcZ * (CONSTANT_G/ACC_RATIOS);
-            float gx_deg_s = GyX / GYRO_RATIOS;
-            float gy_deg_s = GyY / GYRO_RATIOS;
-            float gz_deg_s = GyZ / GYRO_RATIOS;
+            mpu_read();     //Read Data collected by MPU6050
+            proccesAccelData();     //Process data with the respective ratios values
+            proccesGyroData();
+
+            float Raw_AM = pow(pow(ax,2)+pow(ay,2)+pow(az,2),0.5);
+            int AM = Raw_AM * 10;  // as values are within 0 to 1, I multiplied 
+                         // it by for using if else conditions 
             
             //Mostrar las lecturas separadas por un [tab]
             Serial.print("a[x y z](m/s2) g[x y z](deg/s):\t");
@@ -152,4 +151,18 @@ void mpu_read() {
     //Get Acceleration and Rotation parameters
     //   sensor.getAcceleration(&ax, &ay, &az);
     //   sensor.getRotation(&gx, &gy, &gz);
+}
+
+void proccesAccelData(){
+    ax = AcX * (1/ACC_RATIOS);       //Get Acceleration on [m/s2] replacing 1 by CONSTANT_G
+    ay = AcY * (1/ACC_RATIOS);
+    az = AcZ * (1/ACC_RATIOS);
+    // netForce = (gForceX+gForceY+gForceZ)/3;
+}
+
+void processGyroData() {
+    gx = GyX / GYRO_RATIOS;
+    gy = GyY / GYRO_RATIOS;
+    gz = GyZ / GYRO_RATIOS;
+    // netRot = sqrt((rotX*rotX)+(rotY*rotY)+(rotZ*rotZ));
 }
