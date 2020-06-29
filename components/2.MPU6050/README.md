@@ -17,6 +17,7 @@ The following offsets​ were obtained from the execution of the example "MPU605
 ### Values ​​for own case
 
 Sensor readings with offsets:	0	5	16381	-1	1	2
+
 Your offsets:	-1449	558	866	29	-23	35      --> this values are used to calibrate MPU6050
 
 * The first three values ​​belong to accelerometer, on the x, y and z axes respectively. The remaining values ​​correspond to the gyroscope
