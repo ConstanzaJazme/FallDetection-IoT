@@ -9,12 +9,22 @@
 // ================================================================
 // ===                   DEFINES AND CONSTANTS                  ===
 // ================================================================
+#define  SAMPLE_FREQUENCY  100      // Frequency to collect data [ms]
+#define BUFFER_LEN 127
 
 #define CONSTANT_G 9.81   //Gravity constant
 //Conversion factor (w_ACCorGYRO=actual_reading*(maximum_absolute_ACCorGYRO/maximum_absolute_values_MPU6050)) = actual_reading*(1/(maximum_absolute_values_MPU6050/maximum_absolute_ACCorGYRO)))
 #define ACC_RATIOS 16384.0      //Obtained from (maximum_absolute_values_MPU6050 / maximum_absolute_ACC) = (32768/2)
 #define GYRO_RATIOS 131.0
 #define RAD_TO_DEG 57.295779  //57.295779 = 1 / (3.142 / 180) ¡The Arduino asin function is in radians!
+
+#define ACCEL_THRESHOLD  (1.82 * CONSTANT_G)
+#define LOWER_TRESHOLD (0.4 * CONSTANT_G)
+#define UPPER_TRESHOLD (2 * CONSTANT_G)
+
+#define MAX_UINT16 1000
+#define MAX_INT16 1000
+#define MAX_FLOAT 1000.0
 
 //This offsets​were obtained from the execution of the example "MPU6050_Calibration" on the "MPU6050" library.
 const int ACC_OFFSET_X = -1449;
@@ -26,6 +36,8 @@ const int GYRO_OFFSET_Y = -23;
 const int GYRO_OFFSET_Z = 35;
 
 const int MPU_addr=0x68;  // I2C address of the MPU-6050
+
+
 
 // ================================================================
 // ===                       STRUCTS                            ===
@@ -47,14 +59,12 @@ typedef struct {
 // ================================================================
 
 enum States {
-  readingMPU6050,
-  setTriggers,
-  resetTriggers,
-  checkSignal,
-  breaksLowerTreshold,
-  breaksUpperTreshold,
-  checkOrientation,
-  FallDetected
+  readingMPU6050,       //Just for reading and process accel magnitudes
+  abnormalTreshold,      //when an abnormal event has occurred 
+  normalTreshold,       //Transition beetween an abnormal to normal reading
+  checkSignal,          //verifying abnormal event    
+  checkOrientation,     //verifying abnormal event and orientation change
+  FallDetected          //Do something when  fall is detected
 
 };
 
@@ -64,14 +74,22 @@ enum States {
 
 States Signal;
 MPU6050 sensor(MPU_addr);
+IMU_rotation vector_tilt[BUFFER_LEN];
+IMU_rotation Current_orientation;
+
+uint16_t mBuffer_index = 0;
  
 // RAW data from accelerometer and giroscope (x, y and z axis)
 int16_t AcX, AcY, AcZ, Tmp , GyX, GyY, GyZ;
 float ax=0, ay=0, az=0, gx=0, gy=0, gz=0;
 
 //Orientation angles
-float Raw_AM, Aangle_roll, Aangle_pitch; 
+float Raw_AM;
 float Raw_GM;
+float Raw_HM;       //For horizontal magnitude (2 axis, y & z)
+float Aangle_roll, Aangle_pitch; 
+
+unsigned  long  mCurrent_time ;
 
 // ================================================================
 // ===                           SETUP                          ===
@@ -97,6 +115,7 @@ void setup() {
     //sensor.setYAccelOffset(ACC_OFFSET_Y);
     //sensor.setZAccelOffset(ACC_OFFSET_Z);
 
+    mCurrent_time = millis ();
     // Start with the readings
     Signal = readingMPU6050;
 }
@@ -109,43 +128,31 @@ void loop() {
     switch (Signal)
     {
         case readingMPU6050:
+            while (( unsigned  long ) ( millis () - mCurrent_time ) <= SAMPLE_FREQUENCY);
             mpu_read();     //Read Data collected by MPU6050
-            processAccelMagnitudes();     //Process data with the respective ratios values
-            processGyroMagnitudes();
-            processAccelAngles();       //get Aceleration Magnitude, Pitch and Roll angles
-            processGyroAngles();
+            mCurrent_time = millis();
+            IMU_accel current_accel = setAccel();   //Process data with the respective ratios values
+            IMU_rotation current_angles= processAccelAngles(&current_accel);       //get Aceleration Magnitude, Pitch and Roll angles
+            Raw_AM = (float)sqrt(pow(current_accel->x,2)+pow(current_accel->y,2)+pow(current_accel->z,2));     //Calculate the total Accelerometer Vector or Acceleration Magnitude
+            Raw_HM = (float)sqrt(pow(current_accel->y,2)+pow(current_accel->z,2));
 
-            Serial.print("AM: \t");
-            Serial.print(AM); Serial.print("\t");
-            Serial.print("Raw_GM: \t");
-            Serial.println(Raw_GM*10);
-            //Mostrar las lecturas separadas por un [tab]
-            // Serial.print("a[x y z](m/s2) g[x y z](deg/s):\t");
-            // Serial.print(ax_m_s2); Serial.print("\t");
-            // Serial.print(ay_m_s2); Serial.print("\t");
-            // Serial.print(az_m_s2); Serial.print("\t");
-            // Serial.print(gx_deg_s); Serial.print("\t");
-            // Serial.print(gy_deg_s); Serial.print("\t");
-            // Serial.println(gz_deg_s);
+            // Check if acceleration above the threshold
+            if (Raw_HM > ACCEL_THRESHOLD) {
+                Signal = abnormalTreshold;
+            }
             
-            delay(100);
             break;
 
-        case setTriggers:
+        case abnormalTreshold:      //when an abnormal event has occurred 
             break;
     
-        case resetTriggers:
-            break;
-        case checkSignal:
-            break;
-        
-        case breaksLowerTreshold:
+        case normalTreshold:       //Transition beetween an abnormal to normal reading
             break;
 
-        case breaksUpperTreshold:
+        case checkSignal:       //verifying abnormal event    
             break;
 
-        case checkOrientation:
+        case checkOrientation:      //verifying abnormal event and orientation change
             break;        
         
         case FallDetected:
@@ -160,6 +167,35 @@ void loop() {
 // ================================================================
 // ===                        FUNCTIONS                         ===
 // ================================================================
+
+IMU_accel setAccel() {
+    Imu_accel accel;
+
+    accel.x = AcX * (CONSTANT_G/ACC_RATIOS);       //This values are measured on [m/s2], to work with g measure change CONSTANT_G to 1
+    accel.y = AcY * (CONSTANT_G/ACC_RATIOS);
+    accel.z = AcZ * (CONSTANT_G/ACC_RATIOS);
+
+    return accel;
+  
+}
+
+// void processAccelMagnitudes(IMU_accel* accel){
+//     ax = accel->x * (CONSTANT_G/ACC_RATIOS);       //This values are measured on [m/s2], to work with g measure change CONSTANT_G to 1
+//     ay = accel->y * (CONSTANT_G/ACC_RATIOS);
+//     az = accel->z * (CONSTANT_G/ACC_RATIOS);
+//     // netForce = (gForceX+gForceY+gForceZ)/3;
+// }
+
+IMU_rotation processAccelAngles(Imu_accel* accel){
+    Aangle_pitch = atan(-1 * accel->z / sqrt(pow(accel->x, 2) + pow(accel->y, 2))) * RAD_TO_DEG;      //Calculate the pitch angle
+    Aangle_roll= atan(-1 * accel->y / sqrt(pow(accel->x, 2) + pow(accel->z, 2))) * RAD_TO_DEG;       //Calculate the roll angle
+    
+    IMU_rotation angles;
+    angles.roll = Aangle_pitch;
+    angles.pitch = Aangle_pitch;
+    return angles;
+}
+
 
 void mpu_read() {
     Wire.beginTransmission(MPU_addr);
@@ -182,12 +218,6 @@ void mpu_read() {
     //   sensor.getRotation(&gx, &gy, &gz);
 }
 
-void processAccelMagnitudes(){
-    ax = AcX * (CONSTANT_G/ACC_RATIOS);       //This values is measured on [m/s2], to work with g measure change CONSTANT_G to 1
-    ay = AcY * (CONSTANT_G/ACC_RATIOS);
-    az = AcZ * (CONSTANT_G/ACC_RATIOS);
-    // netForce = (gForceX+gForceY+gForceZ)/3;
-}
 
 
 void processGyroMagnitudes() {
@@ -195,12 +225,6 @@ void processGyroMagnitudes() {
     gy = GyY / GYRO_RATIOS;
     gz = GyZ / GYRO_RATIOS;
     // netRot = sqrt((rotX*rotX)+(rotY*rotY)+(rotZ*rotZ));
-}
-
-void processAccelAngles(){
-    Raw_AM = (float)sqrt(pow(ax,2)+pow(ay,2)+pow(az,2));     //Calculate the total Accelerometer Vector or Acceleration Magnitude
-    Aangle_pitch = atan(-1 * az / sqrt(pow(ax, 2) + pow(ay, 2))) * RAD_TO_DEG;      //Calculate the pitch angle
-    Aangle_roll= atan(-1 * ay / sqrt(pow(ax, 2) + pow(az, 2))) * RAD_TO_DEG;       //Calculate the roll angle
 }
 
 void processGyroAngles(){
