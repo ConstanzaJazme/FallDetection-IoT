@@ -15,6 +15,7 @@
 #define IMPOSIBLE_LEN 1000      //This is a value to reset the abnormalTreshold
 #define BUFFER_TiLEN 100        //For Tilt
 #define BUFFER_TrLEN 130        //For Treshold
+#define MAGNITUDE_LEN 5        //For Treshold
 
 #define CONSTANT_G 9.81   //Gravity constant
 //Conversion factor (w_ACCorGYRO=actual_reading*(maximum_absolute_ACCorGYRO/maximum_absolute_values_MPU6050)) = actual_reading*(1/(maximum_absolute_values_MPU6050/maximum_absolute_ACCorGYRO)))
@@ -22,20 +23,13 @@
 #define GYRO_RATIOS 131.0
 #define RAD_TO_DEG 57.295779  //57.295779 = 1 / (3.142 / 180) ¡The Arduino asin function is in radians!
 
-<<<<<<< HEAD
 #define ACCEL_THRESHOLD  (1.82 * CONSTANT_G)
 #define LOWER_TRESHOLD (0.4 * CONSTANT_G)
 #define UPPER_TRESHOLD (2 * CONSTANT_G)
+#define ANGLE_THRESHOLD 40.0
 
 #define WAITING_TIME 10000
-=======
-// Wifi MAC address
-byte mac[]= {  0xDE, 0xED, 0xBA, 0xFE, 0xFE, 0xED };
- 
-WiFiClient espClient;
-IPAddress ip;
-PubSubClient mqttClient(espClient);
->>>>>>> cdaed6afc2a484d75a1e533e01d2fd8dede8f53b
+#define WAIT_POST_BREAKS 100        //Samples requiered post break lower Treshold
 
 //This offsets​were obtained from the execution of the example "MPU6050_Calibration" on the "MPU6050" library.
 const int ACC_OFFSET_X = -1449;
@@ -85,13 +79,17 @@ enum States {
 States Signal;
 MPU6050 sensor(MPU_addr);
 IMU_rotation current_orientation;
-IMU_rotation vector_tilt[BUFFER_TiLEN];
-IMU_accel vector_treshold[BUFFER_TrLEN];
+IMU_rotation vector_tilt[BUFFER_TrLEN];
+IMU_accel vector_accel[BUFFER_TrLEN];
 
-uint16_t buffer_index = 0;
+float vector_magnitudes[MAGNITUDE_LEN] = {0.0};
+int mindex=0;
+
+int buffer_index = 0;
 int previous_abnormal=0;
 int start_abnormal = 0;
 int end_abnormal = IMPOSIBLE_LEN;
+int checking_orientation= IMPOSIBLE_LEN;
  
 // RAW data from accelerometer and giroscope (x, y and z axis)
 int16_t AcX, AcY, AcZ, Tmp , GyX, GyY, GyZ;
@@ -164,14 +162,28 @@ void loop() {
             filter_rotY = FilterLowPass(current_angles.pitch, filter_rotY);
             filter_rotZ = FilterLowPass(current_angles.roll, filter_rotZ);
 
+            // Get Current roll/pitch angles filtered
+            vector_tilt[buffer_index].roll = filter_rotZ;
+            vector_tilt[buffer_index].pitch = filter_rotY;
+
+            // Get Current accelerations angles filtered
+            vector_accel[buffer_index] = current_accel;
+
             // Check if acceleration lower than threshold
             if (Raw_AM <= LOWER_TRESHOLD) {
                 Signal = abnormalTreshold;
             }
 
             // Check the interval recolected after abnormalTreshold
-            if (buffer_index == end_abnormal) {
+            if (buffer_index == checking_orientation) {
                 Signal = checkSignal;
+            }
+
+            //saving vector from magnitudes when end_abnormal is settled
+            if (end_abnormal != IMPOSIBLE_LEN && mindex < MAGNITUDE_LEN) {
+                Serial.print("SAVING IN vector_magnitudes...");
+                vector_magnitudes[mindex] = Raw_AM;
+                mindex++;
             }   
             
             break;
@@ -180,35 +192,52 @@ void loop() {
             previous_abnormal = GetBufferPosition(buffer_index, -10);   //Equal to 1 second before lower treshold detected
             start_abnormal = buffer_index;
             end_abnormal = GetBufferPosition(buffer_index, 5);      //Equal to 0.5 second after lower treshold detected
+            checking_orientation = GetBufferPosition(buffer_index, WAIT_POST_BREAKS);      //  Equal to 10 seconds after lower treshold
             
             //Go back to readingMPU6050
             Signal = readingMPU6050;
             break;
     
-        case normalTreshold:       //Transition beetween an abnormal to normal reading
-            //index to 0
-            mMag_index = 0;
+        case normalTreshold:       //Transition beetween an abnormal to normal reading, this state is triggered when tresholds are not broken
+            end_abnormal = IMPOSIBLE_LEN;
+            checking_orientation = IMPOSIBLE_LEN;
+            
+            //restarting vector_magnitudes
+            mindex = 0;
            
             // Continue measuring accel
-            mState = stateMeasureAccel;
+            Signal = stateMeasureAccel;
             break;
 
         case checkSignal:       //verifying abnormal event
-            //Compare min and max amplitudes
-
-            //
-            // ***else*** No Fall Detected so reset the trigger points
-            mState = stateResetTriggers;    
+            int difference=getMaxAmplitude();
+            if ( difference <= UPPER_TRESHOLD) {    //Compare min and max amplitudes and verify if amplitudes breaks tresholds
+                Signal = checkOrientation;
+            }
+            else {
+                Signal = normalTreshold;    // No Fall Detected so reset the trigger points
+            }
             break;
 
         case checkOrientation:      //verifying abnormal event and orientation change
+            int index = GetBufferPosition(buffer_index, -WAIT_POST_BREAKS);   //getting the last 10 seconds
+            int orientation_change=getMaxChange( index ,buffer_index);
+
+             if (orientation_change > ANGLE_THRESHOLD) {
+                // Fall has been detected
+                Signal = FallDetected;
+            }else {
+                // Fall not detected due to low change in orientation
+                Signal = normalTreshold;
+            }
+
             break;        
         
         case FallDetected:
         {
             Serial.println("Fall Detected");
             waitSignal=true;
-            Signal = resetTriggers;
+            Signal = normalTreshold;
             break;
         }
     }
@@ -246,7 +275,7 @@ IMU_accel setAccel() {
 //     // netForce = (gForceX+gForceY+gForceZ)/3;
 // }
 
-IMU_rotation processAccelAngles(Imu_accel* accel){
+IMU_rotation processAccelAngles(IMU_accel* accel){
     IMU_rotation angles;
     angles.roll= atan(-1 * accel->y / sqrt(pow(accel->x, 2) + pow(accel->z, 2))) * RAD_TO_DEG;       //Calculate the roll angle
     angles.pitch = atan(-1 * accel->z / sqrt(pow(accel->x, 2) + pow(accel->y, 2))) * RAD_TO_DEG;      //Calculate the pitch angle
@@ -307,4 +336,52 @@ int GetBufferPosition(int current_pos, int samples) {       //Get the position g
   }
   return (int) buffer_pos;
 
+}
+
+float getMaxAmplitude() {      //This function get difference between min and max values from an array
+  float minVal = vector_magnitudes[0];
+  float maxVal = vector_magnitudes[0];
+
+  for (int i = 0; i < MAGNITUDE_LEN; i++) {
+    if (vector_magnitudes[i] > maxVal) {
+      maxVal = vector_magnitudes[i];
+    }
+    if (vector_magnitudes[i] < minVal) {
+      minVal = vector_magnitudes[i];
+    }
+  }
+  return (maxVal - minVal);
+}
+
+float getMaxChange(int start, int end) {      //This function get difference between min and max values from an array
+  float minValRoll = vector_tilt[start].roll;
+  float maxValRoll = vector_tilt[start].roll;
+  
+  float minValPitch = vector_tilt[start].pitch;
+  float maxValPitch = vector_tilt[start].pitch;
+
+  for (int i = start; i < end; i++) {
+    if (vector_tilt[i].roll > maxValRoll) {
+      maxValRoll = vector_tilt[i].roll;
+    }
+    if (vector_tilt[i].roll < minValRoll) {
+      minValRoll = vector_tilt[i].roll;
+    }
+    if (vector_tilt[i].pitch > maxValPitch) {
+      maxValPitch = vector_tilt[i].pitch;
+    }
+    if (vector_tilt[i].pitch < minValPitch) {
+      minValPitch = vector_tilt[i].pitch;
+    }
+  }
+
+    float difference_pitch= maxValPitch - minValPitch;
+    float difference_roll= maxValRoll - minValRoll;
+
+  if (difference_pitch>difference_roll)
+  {
+      return difference_pitch
+  }
+  
+  return difference_roll
 }
