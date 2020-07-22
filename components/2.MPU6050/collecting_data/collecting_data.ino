@@ -5,6 +5,8 @@
 #include "I2Cdev.h"     // Find it on https://github.com/jrowberg/i2cdevlib/tree/master/Arduino/I2Cdev
 #include "MPU6050.h"    // Find it on https://github.com/jrowberg/i2cdevlib/tree/master/Arduino/MPU6050
 #include "Wire.h"
+#include <PubSubClient.h>
+#include <ESP8266WiFi.h>
 
 // ================================================================
 // ===                   DEFINES AND CONSTANTS                  ===
@@ -20,11 +22,20 @@
 #define GYRO_RATIOS 131.0
 #define RAD_TO_DEG 57.295779  //57.295779 = 1 / (3.142 / 180) ¡The Arduino asin function is in radians!
 
+<<<<<<< HEAD
 #define ACCEL_THRESHOLD  (1.82 * CONSTANT_G)
 #define LOWER_TRESHOLD (0.4 * CONSTANT_G)
 #define UPPER_TRESHOLD (2 * CONSTANT_G)
 
 #define WAITING_TIME 10000
+=======
+// Wifi MAC address
+byte mac[]= {  0xDE, 0xED, 0xBA, 0xFE, 0xFE, 0xED };
+ 
+WiFiClient espClient;
+IPAddress ip;
+PubSubClient mqttClient(espClient);
+>>>>>>> cdaed6afc2a484d75a1e533e01d2fd8dede8f53b
 
 //This offsets​were obtained from the execution of the example "MPU6050_Calibration" on the "MPU6050" library.
 const int ACC_OFFSET_X = -1449;
