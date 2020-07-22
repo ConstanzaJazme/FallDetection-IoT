@@ -11,7 +11,7 @@
 // ================================================================
 // ===                   DEFINES AND CONSTANTS                  ===
 // ================================================================
-#define  SAMPLE_FREQUENCY  100      // Frequency to collect data [ms]
+#define  SAMPLE_FREQUENCY  100      // Frequency to collect data [miliseconds]
 #define IMPOSIBLE_LEN 1000      //This is a value to reset the abnormalTreshold
 #define BUFFER_TiLEN 100        //For Tilt
 #define BUFFER_TrLEN 130        //For Treshold
@@ -28,7 +28,7 @@
 #define UPPER_TRESHOLD (2 * CONSTANT_G)
 #define ANGLE_THRESHOLD 40.0
 
-#define WAITING_TIME 10000
+#define WAITING_TIME 100000
 #define WAIT_POST_BREAKS 100        //Samples requiered post break lower Treshold
 
 //This offsets​were obtained from the execution of the example "MPU6050_Calibration" on the "MPU6050" library.
@@ -68,8 +68,7 @@ enum States {
   normalTreshold,       //Transition beetween an abnormal to normal reading
   checkSignal,          //verifying abnormal event    
   checkOrientation,     //verifying abnormal event and orientation change
-  FallDetected          //Do something when  fall is detected
-
+  fallDetected          //Do something when  fall is detected
 };
 
 // ================================================================
@@ -78,7 +77,6 @@ enum States {
 
 States Signal;
 MPU6050 sensor(MPU_addr);
-IMU_rotation current_orientation;
 IMU_rotation vector_tilt[BUFFER_TrLEN];
 IMU_accel vector_accel[BUFFER_TrLEN];
 
@@ -104,8 +102,8 @@ float Aangle_roll, Aangle_pitch;
 unsigned  long  mCurrent_time ;
 bool waitSignal=false;      //After a fall detected, this program will wait a time to restart
 
-filter_rotY=0.0;
-filter_rotZ=0.0;
+float filter_rotY=0.0;
+float filter_rotZ=0.0;
 
 // ================================================================
 // ===                           SETUP                          ===
@@ -144,6 +142,7 @@ void loop() {
     switch (Signal)
     {        
         case readingMPU6050:
+          {
             //wait 100 ms to continue
             while (( unsigned  long ) ( millis () - mCurrent_time ) <= SAMPLE_FREQUENCY);
             mCurrent_time = millis();
@@ -155,9 +154,9 @@ void loop() {
             IMU_rotation current_angles= processAccelAngles(&current_accel);       //get Aceleration Magnitude, Pitch and Roll angles
             
             //Calculate the total Accelerometer Vector or Acceleration Magnitude
-            Raw_AM = (float)sqrt(pow(current_accel->x,2)+pow(current_accel->y,2)+pow(current_accel->z,2));    
-            Raw_HM = (float)sqrt(pow(current_accel->y,2)+pow(current_accel->z,2));
-
+            Raw_AM = (float)sqrt(pow(current_accel.x,2)+pow(current_accel.y,2)+pow(current_accel.z,2));    
+            Raw_HM = (float)sqrt(pow(current_accel.y,2)+pow(current_accel.z,2));
+            
             // Apply Low Pass IIR Filter to roll/pitch angles
             filter_rotY = FilterLowPass(current_angles.pitch, filter_rotY);
             filter_rotZ = FilterLowPass(current_angles.roll, filter_rotZ);
@@ -171,87 +170,103 @@ void loop() {
 
             // Check if acceleration lower than threshold
             if (Raw_AM <= LOWER_TRESHOLD) {
+                Serial.println("LOWER TRESHOLD BROKEN");
                 Signal = abnormalTreshold;
             }
 
             // Check the interval recolected after abnormalTreshold
             if (buffer_index == checking_orientation) {
+                Serial.print("PASSING TO CHECK SIGNAL");
                 Signal = checkSignal;
+                Serial.println(Signal);
             }
 
             //saving vector from magnitudes when end_abnormal is settled
             if (end_abnormal != IMPOSIBLE_LEN && mindex < MAGNITUDE_LEN) {
-                Serial.print("SAVING IN vector_magnitudes...");
+                Serial.println("SAVING IN vector_magnitudes...");
                 vector_magnitudes[mindex] = Raw_AM;
                 mindex++;
             }   
             
             break;
-
+        }
         case abnormalTreshold:      //when an abnormal event has occurred
+          { 
+            Serial.println("TRIGGERS SETTLED");
             previous_abnormal = GetBufferPosition(buffer_index, -10);   //Equal to 1 second before lower treshold detected
             start_abnormal = buffer_index;
             end_abnormal = GetBufferPosition(buffer_index, 5);      //Equal to 0.5 second after lower treshold detected
             checking_orientation = GetBufferPosition(buffer_index, WAIT_POST_BREAKS);      //  Equal to 10 seconds after lower treshold
             
+    
             //Go back to readingMPU6050
             Signal = readingMPU6050;
             break;
-    
+        }
         case normalTreshold:       //Transition beetween an abnormal to normal reading, this state is triggered when tresholds are not broken
+          {
             end_abnormal = IMPOSIBLE_LEN;
             checking_orientation = IMPOSIBLE_LEN;
-            
+            Serial.println("DEACTIVATING TRIGGERS");
             //restarting vector_magnitudes
             mindex = 0;
            
             // Continue measuring accel
-            Signal = stateMeasureAccel;
+            Signal = readingMPU6050;
             break;
-
+          }
         case checkSignal:       //verifying abnormal event
+          { 
             int difference=getMaxAmplitude();
             if ( difference <= UPPER_TRESHOLD) {    //Compare min and max amplitudes and verify if amplitudes breaks tresholds
+                Serial.println("UPPER TRESHOLD BROKEN");
                 Signal = checkOrientation;
             }
             else {
                 Signal = normalTreshold;    // No Fall Detected so reset the trigger points
             }
             break;
+          }
 
         case checkOrientation:      //verifying abnormal event and orientation change
+          {
             int index = GetBufferPosition(buffer_index, -WAIT_POST_BREAKS);   //getting the last 10 seconds
-            int orientation_change=getMaxChange( index ,buffer_index);
-
+            float orientation_change=getMaxChange( index ,buffer_index);
+            Serial.print("CHECKING ORIENTATION -> ");
+            Serial.println(orientation_change);
+            
              if (orientation_change > ANGLE_THRESHOLD) {
                 // Fall has been detected
-                Signal = FallDetected;
+                Signal = fallDetected;
             }else {
                 // Fall not detected due to low change in orientation
                 Signal = normalTreshold;
             }
 
             break;        
-        
-        case FallDetected:
-        {
+          }
+        case fallDetected:
+          {  
             Serial.println("Fall Detected");
             waitSignal=true;
             Signal = normalTreshold;
             break;
-        }
+          }
     }
 
-    // IMPORTANT! only increment buffer when state is measuring data
-    if (Signal == stateMeasureAccel) {
+     // IMPORTANT! only increment buffer when state is measuring data
+    if (Signal == readingMPU6050) {
         buffer_index = GetBufferPosition(buffer_index, 1);  
     }
 
     //If a fall is detected, the program will be stopped by a time
     if (waitSignal==true){
+        Serial.println("BLOCKED");
         while (( unsigned  long ) ( millis () - mCurrent_time ) <= WAITING_TIME);
         waitSignal=false;
     }
+    
+   
 }
 
 // ================================================================
@@ -259,7 +274,7 @@ void loop() {
 // ================================================================
 
 IMU_accel setAccel() {
-    Imu_accel accel;
+    IMU_accel accel;
     accel.x = AcX * (CONSTANT_G/ACC_RATIOS);       //This values are measured on [m/s2], to work with g measure change CONSTANT_G to 1
     accel.y = AcY * (CONSTANT_G/ACC_RATIOS);
     accel.z = AcZ * (CONSTANT_G/ACC_RATIOS);
@@ -327,12 +342,12 @@ float FilterLowPass(float new_input, float old_output) {
 int GetBufferPosition(int current_pos, int samples) {       //Get the position given a certain point in the array
   int buffer_pos = current_pos + samples;
 
-  if (buffer_pos > BUFFER_LEN - 1) {
-    buffer_pos -= BUFFER_LEN;
+  if (buffer_pos > BUFFER_TrLEN - 1) {
+    buffer_pos -= BUFFER_TrLEN;
   }
 
   if (buffer_pos < 0) {
-    buffer_pos += BUFFER_LEN;
+    buffer_pos += BUFFER_TrLEN;
   }
   return (int) buffer_pos;
 
@@ -353,35 +368,46 @@ float getMaxAmplitude() {      //This function get difference between min and ma
   return (maxVal - minVal);
 }
 
-float getMaxChange(int start, int end) {      //This function get difference between min and max values from an array
+float getMaxChange(int start, int finish) {      //This function get difference between min and max values from an array
   float minValRoll = vector_tilt[start].roll;
   float maxValRoll = vector_tilt[start].roll;
   
   float minValPitch = vector_tilt[start].pitch;
   float maxValPitch = vector_tilt[start].pitch;
+  int next = start;
+  Serial.print(start);
+  Serial.print(" - ");
+  Serial.println(finish);
 
-  for (int i = start; i < end; i++) {
-    if (vector_tilt[i].roll > maxValRoll) {
-      maxValRoll = vector_tilt[i].roll;
+  while(next!=finish){
+    if (vector_tilt[next].roll > maxValRoll) {
+      maxValRoll = vector_tilt[next].roll;
     }
-    if (vector_tilt[i].roll < minValRoll) {
-      minValRoll = vector_tilt[i].roll;
+    if (vector_tilt[next].roll < minValRoll) {
+      minValRoll = vector_tilt[next].roll;
     }
-    if (vector_tilt[i].pitch > maxValPitch) {
-      maxValPitch = vector_tilt[i].pitch;
+    if (vector_tilt[next].pitch > maxValPitch) {
+      maxValPitch = vector_tilt[next].pitch;
     }
-    if (vector_tilt[i].pitch < minValPitch) {
-      minValPitch = vector_tilt[i].pitch;
+    if (vector_tilt[next].pitch < minValPitch) {
+      minValPitch = vector_tilt[next].pitch;
     }
+    
+    next = GetBufferPosition(next, 1);
   }
 
     float difference_pitch= maxValPitch - minValPitch;
     float difference_roll= maxValRoll - minValRoll;
 
+     Serial.print("DIFFERENCE PICH -> ");
+            Serial.println(difference_pitch);
+     Serial.print("DIFFERENCE ROLL -> ");
+            Serial.println(difference_roll);
+
   if (difference_pitch>difference_roll)
   {
-      return difference_pitch
+      return difference_pitch;
   }
   
-  return difference_roll
+  return difference_roll;
 }
