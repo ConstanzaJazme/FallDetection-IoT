@@ -188,3 +188,6 @@ dist
 .vscode-test
 
 # End of https://www.toptal.com/developers/gitignore/api/lua,c,node
+
+*.h
+*.tmp
