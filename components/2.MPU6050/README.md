@@ -39,7 +39,7 @@ The default ranges (2g and 250 ° / s)
 
 MPU6050 - Arduino UNO R3
 
-VCC  ->  5V
+VCC  ->  3.3V
 
 GND  ->  GND
 
